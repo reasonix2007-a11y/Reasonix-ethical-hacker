@@ -1,0 +1,10 @@
+# Keep shell scripts and container files LF so the Linux image build works,
+# regardless of the committer's platform.
+*.sh            text eol=lf
+docker-entrypoint.sh text eol=lf
+Dockerfile      text eol=lf
+.dockerignore   text eol=lf
+*.mjs           text
+*.js            text
+*.py            text eol=lf
+*.json          text

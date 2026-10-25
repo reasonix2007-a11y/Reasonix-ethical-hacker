@@ -1,0 +1,72 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Reasonix focused QA",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"test:qa"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Reasonix full test suite",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"test"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Reasonix server",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"start"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Reasonix health check",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"-e",
+				"fetch('http://127.0.0.1:5500/').then(async r=>{console.log('HTTP '+r.status+' '+r.headers.get('content-type'));process.exitCode=r.ok?0:1}).catch(e=>{console.error(e.message);process.exitCode=1})"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Reasonix HTTP check",
+			"type": "shell",
+			"command": "curl.exe",
+			"args": [
+				"-I",
+				"--max-time",
+				"5",
+				"http://127.0.0.1:5500/"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Check service status",
+			"type": "shell",
+			"command": "wsl.exe --user root --exec /bin/sh -c \"systemctl is-active postgresql; systemctl is-active ospd-openvas; systemctl is-active gvmd; systemctl is-active gsad; ls -la /run/gvmd\"",
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}

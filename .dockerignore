@@ -1,0 +1,57 @@
+# ---- VCS / local tooling ----
+.git
+.gitignore
+.github
+.vscode
+.venv
+.nuclei-cache
+.nuclei-config
+.uncover-config
+
+# ---- vendored / downloaded trees (reinstalled inside the image) ----
+node_modules
+__pycache__
+$/
+tools/venvs
+tools/repo-scanners
+in/
+httpx/
+nuclei/
+subfinder/
+pwnpipe/
+webpilot/
+report_*/
+reports/
+data/
+
+# ---- large binaries / archives (tools are installed fresh in the image) ----
+*.zip
+*.tar.gz
+*.png
+*.svg
+
+# ---- secrets & local state (never bake into an image) ----
+.env
+.env.*
+!.env.example
+config.json
+*.log
+scan-audit.log*
+scan-result.json
+tool-readiness.json
+server-out.log
+server-err.log
+
+# ---- QA / scratch files not needed at runtime ----
+qa-*.mjs
+qa-*.ps1
+benchmark.mjs
+*.sh
+!docker-entrypoint.sh
+*.bat
+*.cmd
+*.ps1
+demo-vuln-target.mjs
+vulnerable-site.mjs
+test-target.mjs
+scan-integrations.mjs.bak

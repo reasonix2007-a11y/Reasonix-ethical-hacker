@@ -1,0 +1,50 @@
+# ===== secrets & local state (NEVER commit) =====
+.env
+.env.*
+!.env.example
+config.json
+*.log
+scan-audit.log*
+scan-result.json
+tool-readiness.json
+server-out.log
+server-err.log
+err.log
+out.log
+
+# ===== runtime / user data =====
+data/
+
+# ===== dependencies (reinstalled from lockfiles / Dockerfile) =====
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# ===== vendored toolchains & caches (installed fresh in the image) =====
+tools/
+$/
+webpilot/
+pwnpipe/
+subfinder/
+httpx/
+nuclei/
+in/
+.nuclei-cache/
+.nuclei-config/
+.uncover-config/
+report_*/
+reports/
+
+# ===== large binaries / archives =====
+*.zip
+*.tar.gz
+*.7z
+
+# ===== screenshots / scratch images (keep .svg logos) =====
+*.png
+_x1x1x1_tmp.png
+
+# ===== OS / editor =====
+.DS_Store
+Thumbs.db

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 100" role="img" aria-labelledby="title">
+  <title id="title">Reasonix</title>
+  <g fill="none" stroke="#dce2f0" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M48 49 48 12M48 49 17 29M48 49 17 69M48 49 48 88M48 49 79 29M48 49 79 69M17 29 48 12M17 69 48 88"/>
+  </g>
+  <g fill="#fbfcff" stroke="#aeb8cc" stroke-width="1.1">
+    <circle cx="48" cy="12" r="8.8"/><circle cx="17" cy="29" r="8.8"/>
+    <circle cx="17" cy="69" r="8.8"/><circle cx="48" cy="88" r="8.8"/>
+    <circle cx="79" cy="29" r="8.8"/><circle cx="79" cy="69" r="8.8"/>
+    <circle cx="48" cy="49" r="10.5"/>
+  </g>
+  <text x="107" y="78" textLength="430" lengthAdjust="spacingAndGlyphs" fill="#f8f9ff" stroke="#c5ccda" stroke-width=".45" paint-order="stroke" font-family="Arial, Helvetica, sans-serif" font-size="82" font-weight="600" letter-spacing="-.8">Reasonix</text>
+  <circle cx="580" cy="19" r="14" fill="none" stroke="#dce2f0" stroke-width="1.4"/>
+  <text x="580" y="25" text-anchor="middle" fill="#f8f9ff" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="500">®</text>
+</svg>

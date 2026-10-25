@@ -1,0 +1,27 @@
+{
+  "name": "reasonix-ethical-hacker",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node serve.mjs",
+    "start:windows": "powershell.exe -NoProfile -File .\\start-reasonix.ps1",
+    "dev": "node serve.mjs",
+    "benchmark": "node benchmark.mjs",
+    "tools:check": "node setup-tools.mjs --check",
+    "tools:install": "node setup-tools.mjs --install",
+    "test:qa": "node --test qa-scan-finding-quality.mjs qa-scan-integrations.mjs",
+    "test": "node qa-check.mjs && node qa-artifact.mjs && node qa-repository.mjs && node qa-scan-mode.mjs && node qa-scan-scope.mjs && node qa-scan-auth.mjs && node qa-scan-integrations.mjs && node qa-scan-finding-quality.mjs && node qa-vulnerable-site.mjs && node qa-compliance.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "playwright-core": "^1.63.0"
+  },
+  "dependencies": {
+    "http-proxy-agent": "^9.1.0",
+    "https-proxy-agent": "^9.1.0"
+  }
+}
