@@ -52,7 +52,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # ---- Base OS / build dependencies ----
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl wget git unzip bsdmainutils \
-        python3 python3-venv python3-pip pipx \
+        python3 python3-venv python3-pip python3-dev pipx \
+        libcurl4-openssl-dev libssl-dev \
         ruby ruby-dev build-essential \
         default-jre-headless \
         dnsutils libpcap0.8 procps \
@@ -88,10 +89,16 @@ COPY --from=gobuild /out/ /usr/local/go-tools/
 # cases during the image build.
 RUN pipx install sqlmap || true
 RUN pipx install wapiti3 || true
-RUN pipx install theHarvester || true
 RUN pipx install sublist3r || true
 RUN pipx install wafw00f || true
 RUN pipx install wfuzz || true
+# theHarvester ships no pipx-discoverable console script, so install it into a
+# dedicated venv and expose a `theHarvester` wrapper that runs it as a module.
+RUN python3 -m venv /opt/theharvester-venv \
+    && /opt/theharvester-venv/bin/pip install --no-cache-dir theHarvester \
+    && printf '#!/bin/sh\nexec /opt/theharvester-venv/bin/python -m theHarvester "$@"\n' > /usr/local/bin/theHarvester \
+    && chmod +x /usr/local/bin/theHarvester \
+    || echo ">>> theHarvester install FAILED"
 
 # ---- Ruby tool: wpscan ----
 RUN gem install wpscan --no-document || true
