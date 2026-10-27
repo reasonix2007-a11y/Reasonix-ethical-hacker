@@ -46,25 +46,34 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIPX_BIN_DIR=/usr/local/bin \
     PATH=/usr/local/go-tools:/opt/tools/testssl.sh:$PATH
 
-# ---- OS packages + apt-provided scanners ----
+# ---- Base OS / build dependencies ----
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl wget git unzip bsdmainutils \
         python3 python3-venv python3-pip pipx \
         ruby ruby-dev build-essential \
         default-jre-headless \
-        nmap nikto whatweb sslscan wafw00f wfuzz dnsutils \
-        libpcap0.8 procps \
+        dnsutils libpcap0.8 procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---- apt-provided scanners (separate layer so a single package failure is
+#      easy to pinpoint in the build log) ----
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        nmap nikto whatweb sslscan \
     && rm -rf /var/lib/apt/lists/*
 
 # ---- Go tool binaries from stage 1 ----
 COPY --from=gobuild /out/ /usr/local/go-tools/
 
 # ---- Python tools (isolated via pipx) ----
-RUN pipx install sqlmap \
-    && pipx install wapiti3 \
-    && pipx install theHarvester \
-    && pipx install sublist3r \
-    || true
+# Each install is independent so one failure cannot skip the rest. wafw00f and
+# wfuzz are installed here rather than via apt to avoid Debian packaging edge
+# cases during the image build.
+RUN pipx install sqlmap || true
+RUN pipx install wapiti3 || true
+RUN pipx install theHarvester || true
+RUN pipx install sublist3r || true
+RUN pipx install wafw00f || true
+RUN pipx install wfuzz || true
 
 # ---- Ruby tool: wpscan ----
 RUN gem install wpscan --no-document || true
