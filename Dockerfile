@@ -58,10 +58,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         dnsutils libpcap0.8 procps \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- apt-provided scanners (separate layer so a single package failure is
-#      easy to pinpoint in the build log) ----
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        nmap nikto whatweb sslscan \
+# ---- apt-provided scanners ----
+# Installed one at a time with an explicit log marker so a single unavailable
+# package is pinpointed in the build log, and a failure of one does not abort
+# the whole image build (missing tools remain visible as missing at runtime).
+RUN apt-get update \
+    && for pkg in nmap nikto whatweb sslscan; do \
+         echo ">>> apt install: $pkg"; \
+         apt-get install -y --no-install-recommends "$pkg" \
+           || echo ">>> apt install FAILED: $pkg"; \
+       done \
     && rm -rf /var/lib/apt/lists/*
 
 # ---- Go tool binaries from stage 1 ----
