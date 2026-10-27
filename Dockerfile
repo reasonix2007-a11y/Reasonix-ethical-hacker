@@ -97,9 +97,10 @@ RUN mkdir -p /app/tools/nikto/program \
         || cp /var/lib/nikto/nikto.conf /app/tools/nikto/program/nikto.conf.default 2>/dev/null \
         || touch /app/tools/nikto/program/nikto.conf.default)
 
-# Persisted encrypted user data lives here — mount a Railway volume at /app/data.
+# Persisted encrypted user data lives here. On Railway, attach a Railway Volume
+# with mount path /app/data (the Dockerfile VOLUME instruction is unsupported by
+# Railway's builder, so it is intentionally omitted).
 RUN mkdir -p /app/data
-VOLUME ["/app/data"]
 
 # Local engine endpoints started by the entrypoint (never exposed publicly).
 ENV REASONIX_SQLMAP_API_URL=http://127.0.0.1:8775 \
