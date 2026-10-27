@@ -12,14 +12,17 @@
 # ---------------------------------------------------------------------------
 # Stage 1: Go tools
 # ---------------------------------------------------------------------------
-FROM golang:1.23-bookworm AS gobuild
+FROM golang:1.26-bookworm AS gobuild
 
 # libpcap is needed for naabu (CGO).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libpcap-dev \
     && rm -rf /var/lib/apt/lists/*
 
-ENV GOBIN=/out GOFLAGS=-trimpath CGO_ENABLED=1
+# GOTOOLCHAIN=auto lets `go install` fetch a newer toolchain automatically when
+# a tool's go.mod requires one (e.g. nuclei requires go >= 1.26), so tool
+# version bumps do not break the build against a pinned base image.
+ENV GOBIN=/out GOFLAGS=-trimpath CGO_ENABLED=1 GOTOOLCHAIN=auto
 RUN mkdir -p /out
 
 # Each install is its own layer so a single failure is easy to pinpoint and
