@@ -92,9 +92,10 @@ RUN pipx install wapiti3 || true
 RUN pipx install sublist3r || true
 RUN pipx install wafw00f || true
 # theHarvester: the PyPI "theHarvester" name is an unrelated 0.0.1 stub, so
-# install the real tool (laramies/theHarvester) from source; pipx then exposes
-# its theHarvester/restfulHarvest console scripts on PATH.
-RUN pipx install "git+https://github.com/laramies/theHarvester.git" \
+# install the real tool (laramies/theHarvester) from source. Pinned to 4.6.0,
+# the newest tag that still supports Python 3.11 (bookworm); newer tags require
+# Python >= 3.12/3.14. pipx exposes its theHarvester console script on PATH.
+RUN pipx install "git+https://github.com/laramies/theHarvester.git@4.6.0" \
     || echo ">>> theHarvester install FAILED"
 # wfuzz pins pycurl==7.43.0.3, which fails to compile against modern libcurl.
 # Install a current pycurl into wfuzz's venv first, then wfuzz without deps so
