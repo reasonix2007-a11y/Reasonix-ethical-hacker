@@ -91,14 +91,19 @@ RUN pipx install sqlmap || true
 RUN pipx install wapiti3 || true
 RUN pipx install sublist3r || true
 RUN pipx install wafw00f || true
-RUN pipx install wfuzz || true
-# theHarvester ships no pipx-discoverable console script, so install it into a
-# dedicated venv and expose a `theHarvester` wrapper that runs it as a module.
-RUN python3 -m venv /opt/theharvester-venv \
-    && /opt/theharvester-venv/bin/pip install --no-cache-dir theHarvester \
-    && printf '#!/bin/sh\nexec /opt/theharvester-venv/bin/python -m theHarvester "$@"\n' > /usr/local/bin/theHarvester \
-    && chmod +x /usr/local/bin/theHarvester \
+# theHarvester: the PyPI "theHarvester" name is an unrelated 0.0.1 stub, so
+# install the real tool (laramies/theHarvester) from source; pipx then exposes
+# its theHarvester/restfulHarvest console scripts on PATH.
+RUN pipx install "git+https://github.com/laramies/theHarvester.git" \
     || echo ">>> theHarvester install FAILED"
+# wfuzz pins pycurl==7.43.0.3, which fails to compile against modern libcurl.
+# Install a current pycurl into wfuzz's venv first, then wfuzz without deps so
+# the broken pin is skipped. wfuzz is legacy (superseded by ffuf); tolerant.
+RUN python3 -m venv /opt/wfuzz-venv \
+    && /opt/wfuzz-venv/bin/pip install --no-cache-dir pycurl chardet pyparsing six configparser \
+    && /opt/wfuzz-venv/bin/pip install --no-cache-dir --no-deps wfuzz \
+    && ln -sf /opt/wfuzz-venv/bin/wfuzz /usr/local/bin/wfuzz \
+    || echo ">>> wfuzz install FAILED"
 
 # ---- Ruby tool: wpscan ----
 RUN gem install wpscan --no-document || true
