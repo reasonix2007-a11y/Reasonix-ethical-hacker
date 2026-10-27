@@ -63,12 +63,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # package is pinpointed in the build log, and a failure of one does not abort
 # the whole image build (missing tools remain visible as missing at runtime).
 RUN apt-get update \
-    && for pkg in nmap nikto whatweb sslscan; do \
+    && for pkg in nmap whatweb sslscan; do \
          echo ">>> apt install: $pkg"; \
          apt-get install -y --no-install-recommends "$pkg" \
            || echo ">>> apt install FAILED: $pkg"; \
        done \
     && rm -rf /var/lib/apt/lists/*
+
+# ---- nikto (from source; the Debian package fails to install on bookworm) ----
+# nikto is a Perl script. SSL checks need libnet-ssleay-perl / libio-socket-ssl-perl.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends perl libnet-ssleay-perl libio-socket-ssl-perl \
+    && rm -rf /var/lib/apt/lists/* || echo ">>> nikto perl deps install FAILED"
+RUN git clone --depth 1 https://github.com/sullo/nikto.git /opt/nikto \
+    && ln -sf /opt/nikto/program/nikto.pl /usr/local/bin/nikto \
+    || echo ">>> nikto source install FAILED"
 
 # ---- Go tool binaries from stage 1 ----
 COPY --from=gobuild /out/ /usr/local/go-tools/
@@ -89,18 +98,22 @@ RUN gem install wpscan --no-document || true
 
 # ---- testssl.sh (git) ----
 RUN git clone --depth 1 https://github.com/drwetter/testssl.sh.git /opt/tools/testssl.sh \
-    && ln -sf /opt/tools/testssl.sh/testssl.sh /usr/local/bin/testssl.sh
+    && ln -sf /opt/tools/testssl.sh/testssl.sh /usr/local/bin/testssl.sh \
+    || echo ">>> testssl.sh install FAILED"
 
 # ---- retire.js (node, global) ----
 RUN npm install -g retire || true
 
 # ---- OWASP ZAP (daemon used by the zap-api integration) ----
-ARG ZAP_VERSION=2.15.0
-RUN wget -q "https://github.com/zaproxy/zaproxy/releases/download/v${ZAP_VERSION}/ZAP_${ZAP_VERSION}_Linux.tar.gz" -O /tmp/zap.tgz \
+# Non-fatal: ZAP is an optional integration, so a download hiccup must not abort
+# the whole image build. The zap-api feature stays unavailable if it is missing.
+ARG ZAP_VERSION=2.17.0
+RUN (wget -q "https://github.com/zaproxy/zaproxy/releases/download/v${ZAP_VERSION}/ZAP_${ZAP_VERSION}_Linux.tar.gz" -O /tmp/zap.tgz \
     && tar -xzf /tmp/zap.tgz -C /opt \
     && mv "/opt/ZAP_${ZAP_VERSION}" /opt/zap \
     && ln -sf /opt/zap/zap.sh /usr/local/bin/zap.sh \
-    && rm -f /tmp/zap.tgz
+    && rm -f /tmp/zap.tgz) \
+    || echo ">>> OWASP ZAP install FAILED"
 
 # ---- application ----
 WORKDIR /app
@@ -111,8 +124,9 @@ COPY . .
 # nikto's integration passes an explicit config path under tools/nikto/program/.
 # Provide one that points at the system nikto install so the scan can run.
 RUN mkdir -p /app/tools/nikto/program \
-    && (cp /etc/nikto.conf /app/tools/nikto/program/nikto.conf.default 2>/dev/null \
-        || cp /var/lib/nikto/nikto.conf /app/tools/nikto/program/nikto.conf.default 2>/dev/null \
+    && (cp /opt/nikto/program/nikto.conf.default /app/tools/nikto/program/nikto.conf.default 2>/dev/null \
+        || cp /opt/nikto/program/nikto.conf /app/tools/nikto/program/nikto.conf.default 2>/dev/null \
+        || cp /etc/nikto.conf /app/tools/nikto/program/nikto.conf.default 2>/dev/null \
         || touch /app/tools/nikto/program/nikto.conf.default)
 
 # Persisted encrypted user data lives here. On Railway, attach a Railway Volume
