@@ -1,132 +1,203 @@
 # syntax=docker/dockerfile:1
 
 # ============================================================================
-# Reasonix — production container (Linux) with the full authorized-testing
-# toolchain baked in. Build runs on Railway's cloud builder.
+# Reasonix — production container for authorized security testing.
 #
-# Stages:
-#   1) gobuild   — compiles the Go-based scanners (ProjectDiscovery et al.)
-#   2) runtime   — node 24 + apt/pip/gem tools + ZAP, runs the server
+# Built on Kali Linux rolling so the full Kali CLI toolchain is available from
+# the official Kali repositories, with Node.js installed on top to run the
+# Reasonix server. Freshly-built Go scanners (ProjectDiscovery, tomnomnom, …)
+# are compiled in a separate stage and copied in so they stay current.
+#
+# Railway is a Linux container platform: GUI tools (Burp, Maltego, Vega, IDA),
+# Windows-only tools (x64dbg), wireless tools needing a physical adapter, and
+# commercial/licensed services (Nessus, Qualys, Burp Pro) cannot run here and
+# are intentionally not installed. Everything installable as a Linux CLI is.
+#
+# Every tool install is best-effort: a single unavailable package logs a
+# ">>> ... FAILED" marker and does not abort the build, so missing tools simply
+# remain visible as missing at runtime instead of breaking the whole image.
 # ============================================================================
 
 # ---------------------------------------------------------------------------
-# Stage 1: Go tools
+# Stage 1: fresh Go-based scanners
 # ---------------------------------------------------------------------------
 FROM golang:1.26-bookworm AS gobuild
 
 # libpcap is needed for naabu (CGO).
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        libpcap-dev \
+RUN apt-get update && apt-get install -y --no-install-recommends libpcap-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# GOTOOLCHAIN=auto lets `go install` fetch a newer toolchain automatically when
-# a tool's go.mod requires one (e.g. nuclei requires go >= 1.26), so tool
-# version bumps do not break the build against a pinned base image.
 ENV GOBIN=/out GOFLAGS=-trimpath CGO_ENABLED=1 GOTOOLCHAIN=auto
 RUN mkdir -p /out
 
-# Each install is its own layer so a single failure is easy to pinpoint and
-# the Docker cache survives edits to the rest.
-RUN go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
-RUN go install github.com/projectdiscovery/httpx/cmd/httpx@latest
-RUN go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-RUN go install github.com/projectdiscovery/katana/cmd/katana@latest
-RUN go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest
-RUN go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
-RUN go install github.com/OJ/gobuster/v3@latest
-RUN go install github.com/ffuf/ffuf/v2@latest
-RUN go install github.com/owasp-amass/amass/v4/...@master
-RUN go install github.com/tomnomnom/assetfinder@latest
+# Core ProjectDiscovery / recon scanners (kept fresh here rather than via apt).
+RUN set -eux; for mod in \
+      "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest" \
+      "github.com/projectdiscovery/httpx/cmd/httpx@latest" \
+      "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest" \
+      "github.com/projectdiscovery/katana/cmd/katana@latest" \
+      "github.com/projectdiscovery/dnsx/cmd/dnsx@latest" \
+      "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest" \
+      "github.com/projectdiscovery/tlsx/cmd/tlsx@latest" \
+      "github.com/projectdiscovery/chaos-client/cmd/chaos@latest" \
+      "github.com/OJ/gobuster/v3@latest" \
+      "github.com/ffuf/ffuf/v2@latest" \
+      "github.com/owasp-amass/amass/v4/...@master" \
+      "github.com/tomnomnom/assetfinder@latest" \
+    ; do echo ">>> go install: $mod"; go install "$mod" || echo ">>> go install FAILED: $mod"; done
+
+# Extra Go utilities (XSS/CRLF/fuzzing/recon/SBOM/k8s) — all best-effort.
+RUN set -eux; for mod in \
+      "github.com/hahwul/dalfox/v2@latest" \
+      "github.com/dwisiswant0/crlfuzz/cmd/crlfuzz@latest" \
+      "github.com/lc/gau/v2/cmd/gau@latest" \
+      "github.com/tomnomnom/waybackurls@latest" \
+      "github.com/tomnomnom/qsreplace@latest" \
+      "github.com/tomnomnom/gf@latest" \
+      "github.com/tomnomnom/meg@latest" \
+      "github.com/tomnomnom/unfurl@latest" \
+      "github.com/Josue87/gotator@latest" \
+      "github.com/d3mondev/puredns/v2@latest" \
+      "github.com/PentestPad/subzy@latest" \
+      "github.com/jaeles-project/jaeles@latest" \
+      "github.com/google/osv-scanner/cmd/osv-scanner@latest" \
+      "github.com/goodwithtech/dockle/cmd/dockle@latest" \
+      "github.com/aquasecurity/kube-bench@latest" \
+      "github.com/Shopify/kubeaudit@latest" \
+      "github.com/controlplaneio/kubesec/v2@latest" \
+      "github.com/derailed/popeye@latest" \
+    ; do echo ">>> go install: $mod"; go install "$mod" || echo ">>> go install FAILED: $mod"; done
 
 # ---------------------------------------------------------------------------
-# Stage 2: runtime
+# Stage 2: runtime (Kali Linux + Node.js + tools)
 # ---------------------------------------------------------------------------
-FROM node:24-bookworm AS runtime
+FROM kalilinux/kali-rolling AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive \
     NODE_ENV=production \
     PIPX_HOME=/opt/pipx \
     PIPX_BIN_DIR=/usr/local/bin \
-    PATH=/usr/local/go-tools:/opt/tools/testssl.sh:$PATH
+    LANG=C.UTF-8 \
+    PATH=/usr/local/go-tools:/usr/local/bin:/opt/tools/bin:$PATH
 
-# ---- Base OS / build dependencies ----
+# ---- base OS / build dependencies ----
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl wget git unzip bsdmainutils \
-        python3 python3-venv python3-pip python3-dev pipx \
-        libcurl4-openssl-dev libssl-dev \
-        ruby ruby-dev build-essential \
+        kali-archive-keyring ca-certificates curl wget git unzip xz-utils \
+        gnupg lsb-release bsdmainutils procps \
+        python3 python3-venv python3-pip pipx python3-dev \
+        libcurl4-openssl-dev libssl-dev build-essential \
+        ruby ruby-dev \
         default-jre-headless \
-        dnsutils libpcap0.8 procps \
+        dnsutils libpcap0.8 perl \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- apt-provided scanners ----
-# Installed one at a time with an explicit log marker so a single unavailable
-# package is pinpointed in the build log, and a failure of one does not abort
-# the whole image build (missing tools remain visible as missing at runtime).
+# ---- Node.js 24 (NodeSource) ----
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && node --version && npm --version
+
+# ---- Kali tool metapackages ----
+# Each category is its own layer so Railway's layer cache resumes a failed
+# build, and so one slow/broken category cannot stall the others. Wireless and
+# hardware-bound metapackages are omitted: they cannot function on Railway.
 RUN apt-get update \
-    && for pkg in nmap whatweb sslscan; do \
+    && apt-get install -y --no-install-recommends kali-tools-information-gathering \
+       || echo ">>> kali-tools-information-gathering FAILED" ; rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends kali-tools-web \
+       || echo ">>> kali-tools-web FAILED" ; rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends kali-tools-vulnerability \
+       || echo ">>> kali-tools-vulnerability FAILED" ; rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends kali-tools-database \
+       || echo ">>> kali-tools-database FAILED" ; rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends kali-tools-passwords \
+       || echo ">>> kali-tools-passwords FAILED" ; rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends kali-tools-reverse-engineering \
+       || echo ">>> kali-tools-reverse-engineering FAILED" ; rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends kali-tools-exploitation \
+       || echo ">>> kali-tools-exploitation FAILED" ; rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends kali-tools-forensics \
+       || echo ">>> kali-tools-forensics FAILED" ; rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends kali-tools-sniffing-spoofing \
+       || echo ">>> kali-tools-sniffing-spoofing FAILED" ; rm -rf /var/lib/apt/lists/*
+
+# ---- explicit key packages (ensure present even if a metapackage changed) ----
+RUN apt-get update \
+    && for pkg in nmap masscan nikto whatweb sqlmap sslscan testssl.sh \
+                  wfuzz wafw00f gobuster ffuf dirb dirbuster commix skipfish \
+                  wpscan joomscan whatweb amass sublist3r dnsrecon dnsenum fierce \
+                  theharvester recon-ng spiderfoot dnsmap \
+                  hydra medusa ncrack patator john hashcat crunch \
+                  radare2 binwalk foremost exiftool clamav lynis \
+                  tcpdump tshark ngrep \
+                  metasploit-framework exploitdb seclists \
+                  zaproxy ; do \
          echo ">>> apt install: $pkg"; \
-         apt-get install -y --no-install-recommends "$pkg" \
-           || echo ">>> apt install FAILED: $pkg"; \
-       done \
-    && rm -rf /var/lib/apt/lists/*
-
-# ---- nikto (from source; the Debian package fails to install on bookworm) ----
-# nikto is a Perl script. SSL checks need libnet-ssleay-perl / libio-socket-ssl-perl.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends perl libnet-ssleay-perl libio-socket-ssl-perl \
-    && rm -rf /var/lib/apt/lists/* || echo ">>> nikto perl deps install FAILED"
-RUN git clone --depth 1 https://github.com/sullo/nikto.git /opt/nikto \
-    && ln -sf /opt/nikto/program/nikto.pl /usr/local/bin/nikto \
-    || echo ">>> nikto source install FAILED"
+         apt-get install -y --no-install-recommends "$pkg" || echo ">>> apt install FAILED: $pkg"; \
+       done ; rm -rf /var/lib/apt/lists/*
 
 # ---- Go tool binaries from stage 1 ----
 COPY --from=gobuild /out/ /usr/local/go-tools/
 
-# ---- Python tools (isolated via pipx) ----
-# Each install is independent so one failure cannot skip the rest. wafw00f and
-# wfuzz are installed here rather than via apt to avoid Debian packaging edge
-# cases during the image build.
-RUN pipx install sqlmap || true
-RUN pipx install wapiti3 || true
-RUN pipx install sublist3r || true
-RUN pipx install wafw00f || true
-# theHarvester: the PyPI "theHarvester" name is an unrelated 0.0.1 stub, so
-# install the real tool (laramies/theHarvester) from source. Pinned to 4.6.0,
-# the newest tag that still supports Python 3.11 (bookworm); newer tags require
-# Python >= 3.12/3.14. pipx exposes its theHarvester console script on PATH.
-RUN pipx install "git+https://github.com/laramies/theHarvester.git@4.6.0" \
-    || echo ">>> theHarvester install FAILED"
-# wfuzz pins pycurl==7.43.0.3, which fails to compile against modern libcurl.
-# Install a current pycurl into wfuzz's venv first, then wfuzz without deps so
-# the broken pin is skipped. wfuzz is legacy (superseded by ffuf); tolerant.
-RUN python3 -m venv /opt/wfuzz-venv \
-    && /opt/wfuzz-venv/bin/pip install --no-cache-dir pycurl chardet pyparsing six configparser \
-    && /opt/wfuzz-venv/bin/pip install --no-cache-dir --no-deps wfuzz \
-    && ln -sf /opt/wfuzz-venv/bin/wfuzz /usr/local/bin/wfuzz \
-    || echo ">>> wfuzz install FAILED"
+# ---- Python CLI tools via pipx (isolated venvs, each best-effort) ----
+# Only tools Kali lacks or that are better kept fresh from PyPI; Kali already
+# provides sqlmap, wapiti, theHarvester, wafw00f, wfuzz, sublist3r, recon-ng,
+# spiderfoot, dnsrecon and fierce via apt above.
+RUN for pkg in semgrep checkov sslyze arjun dirsearch holehe h8mail \
+               detect-secrets bandit kube-hunter knockpy py-altdns \
+               scoutsuite prowler njsscan droopescan dnstwist wapiti3 ; do \
+      echo ">>> pipx install: $pkg"; pipx install "$pkg" || echo ">>> pipx install FAILED: $pkg"; \
+    done
 
-# ---- Ruby tool: wpscan ----
-RUN gem install wpscan --no-document || true
+# ---- git-only Python tools (venv + PATH symlink named as the catalog bin) ----
+RUN set -ux; \
+    install_git_tool() { \
+      name="$1"; repo="$2"; entry="$3"; \
+      echo ">>> git tool: $name"; \
+      if git clone --depth 1 "$repo" "/opt/tools/$name"; then \
+        python3 -m venv "/opt/tools/$name/.venv"; \
+        "/opt/tools/$name/.venv/bin/pip" install --no-cache-dir -r "/opt/tools/$name/requirements.txt" 2>/dev/null || true; \
+        printf '#!/bin/sh\nexec "/opt/tools/%s/.venv/bin/python" "/opt/tools/%s/%s" "$@"\n' "$name" "$name" "$entry" > "/usr/local/bin/$name"; \
+        chmod +x "/usr/local/bin/$name"; \
+      else echo ">>> git tool FAILED: $name"; fi; \
+    }; \
+    install_git_tool xsstrike https://github.com/s0md3v/XSStrike.git xsstrike.py; \
+    install_git_tool ssrfmap  https://github.com/swisskyrepo/SSRFmap.git ssrfmap.py; \
+    install_git_tool tplmap   https://github.com/epinna/tplmap.git tplmap.py; \
+    install_git_tool cmseek   https://github.com/Tuhinshubhra/CMSeeK.git cmseek.py
 
-# ---- testssl.sh (git) ----
-RUN git clone --depth 1 https://github.com/drwetter/testssl.sh.git /opt/tools/testssl.sh \
-    && ln -sf /opt/tools/testssl.sh/testssl.sh /usr/local/bin/testssl.sh \
-    || echo ">>> testssl.sh install FAILED"
+# ---- binary-release security scanners (official install scripts) ----
+RUN echo ">>> trivy"   && curl -fsSL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin || echo ">>> trivy FAILED"
+RUN echo ">>> grype"   && curl -fsSL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin || echo ">>> grype FAILED"
+RUN echo ">>> syft"    && curl -fsSL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin || echo ">>> syft FAILED"
+RUN echo ">>> gitleaks" && curl -fsSL https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | sh 2>/dev/null \
+    || ( GL=$(curl -fsSL https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep -o 'https://[^"]*linux_x64.tar.gz' | head -1) \
+         && curl -fsSL "$GL" -o /tmp/gl.tgz && tar -xzf /tmp/gl.tgz -C /usr/local/bin gitleaks && rm -f /tmp/gl.tgz ) \
+    || echo ">>> gitleaks FAILED"
+RUN echo ">>> trufflehog" && curl -fsSL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin || echo ">>> trufflehog FAILED"
+RUN echo ">>> hadolint" && curl -fsSL -o /usr/local/bin/hadolint \
+      https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64 \
+    && chmod +x /usr/local/bin/hadolint || echo ">>> hadolint FAILED"
+RUN echo ">>> findomain" && curl -fsSL -o /tmp/findomain.zip \
+      https://github.com/findomain/findomain/releases/latest/download/findomain-linux.zip \
+    && unzip -o /tmp/findomain.zip -d /usr/local/bin && chmod +x /usr/local/bin/findomain && rm -f /tmp/findomain.zip \
+    || echo ">>> findomain FAILED"
 
-# ---- retire.js (node, global) ----
-RUN npm install -g retire || true
+# ---- Node / Ruby extra tools ----
+RUN npm install -g retire snyk wscat || echo ">>> npm global tools FAILED"
+RUN gem install brakeman --no-document || echo ">>> brakeman FAILED"
 
-# ---- OWASP ZAP (daemon used by the zap-api integration) ----
-# Non-fatal: ZAP is an optional integration, so a download hiccup must not abort
-# the whole image build. The zap-api feature stays unavailable if it is missing.
-ARG ZAP_VERSION=2.17.0
-RUN (wget -q "https://github.com/zaproxy/zaproxy/releases/download/v${ZAP_VERSION}/ZAP_${ZAP_VERSION}_Linux.tar.gz" -O /tmp/zap.tgz \
-    && tar -xzf /tmp/zap.tgz -C /opt \
-    && mv "/opt/ZAP_${ZAP_VERSION}" /opt/zap \
-    && ln -sf /opt/zap/zap.sh /usr/local/bin/zap.sh \
-    && rm -f /tmp/zap.tgz) \
-    || echo ">>> OWASP ZAP install FAILED"
+# ---- MobSF (optional, heavy; installed but not auto-started) ----
+# Enable by starting it and setting MOBSF_API_KEY + MOBSF URL env vars.
+RUN pipx install mobsf || echo ">>> MobSF install FAILED (optional)"
 
 # ---- application ----
 WORKDIR /app
@@ -135,16 +206,12 @@ RUN npm ci --omit=dev
 COPY . .
 
 # nikto's integration passes an explicit config path under tools/nikto/program/.
-# Provide one that points at the system nikto install so the scan can run.
 RUN mkdir -p /app/tools/nikto/program \
-    && (cp /opt/nikto/program/nikto.conf.default /app/tools/nikto/program/nikto.conf.default 2>/dev/null \
-        || cp /opt/nikto/program/nikto.conf /app/tools/nikto/program/nikto.conf.default 2>/dev/null \
-        || cp /etc/nikto.conf /app/tools/nikto/program/nikto.conf.default 2>/dev/null \
+    && (cp /etc/nikto.conf /app/tools/nikto/program/nikto.conf.default 2>/dev/null \
+        || cp /etc/nikto/nikto.conf /app/tools/nikto/program/nikto.conf.default 2>/dev/null \
         || touch /app/tools/nikto/program/nikto.conf.default)
 
-# Persisted encrypted user data lives here. On Railway, attach a Railway Volume
-# with mount path /app/data (the Dockerfile VOLUME instruction is unsupported by
-# Railway's builder, so it is intentionally omitted).
+# Persisted encrypted user data. On Railway attach a Volume at /app/data.
 RUN mkdir -p /app/data
 
 # Local engine endpoints started by the entrypoint (never exposed publicly).
