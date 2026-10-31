@@ -91,10 +91,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         dnsutils libpcap0.8 perl \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- Node.js 24 (NodeSource) ----
-RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/* \
+# ---- Node.js 24 (official nodejs.org tarball) ----
+# Installed from the official distribution rather than NodeSource so it does not
+# depend on the apt repo recognising the Kali rolling codename. latest-v24.x
+# always resolves to the newest 24.x release.
+RUN VER="$(curl -fsSL https://nodejs.org/dist/latest-v24.x/ \
+      | grep -oE 'node-v24\.[0-9]+\.[0-9]+-linux-x64\.tar\.xz' | head -1)" \
+    && echo ">>> installing $VER" \
+    && curl -fsSL "https://nodejs.org/dist/latest-v24.x/${VER}" -o /tmp/node.tar.xz \
+    && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
+    && rm -f /tmp/node.tar.xz \
     && node --version && npm --version
 
 # ---- Kali tool metapackages ----
