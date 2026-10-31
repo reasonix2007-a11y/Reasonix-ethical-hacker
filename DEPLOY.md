@@ -1,7 +1,13 @@
-# نشر Reasonix على Railway (Docker + Linux)
+# نشر Reasonix على Railway (Docker + Kali Linux)
 
-هذا المشروع يُبنى كحاوية Docker على لينكس تحتوي كامل أدوات الفحص، ويُنشر على
-Railway. البناء يتم على سيرفرات Railway.
+هذا المشروع يُبنى كحاوية Docker مبنية على **Kali Linux** (`kalilinux/kali-rolling`)
+مع Node.js مثبّت فوقها، وتحتوي أدوات الفحص من مستودعات كالي الرسمية. يُنشر على
+Railway والبناء يتم على سيرفرات Railway.
+
+> Railway منصّة حاويات **لينكس فقط**: لا يوجد Windows CMD ولا WSL. الأدوات الرسومية
+> (Burp، Maltego، Vega، IDA)، وأدوات ويندوز (x64dbg)، وأدوات اللاسلكي التي تحتاج
+> محوّلاً فيزيائياً (aircrack، wifite، reaver)، والأدوات التجارية المرخّصة
+> (Nessus، Qualys، Burp Pro) **لا يمكن تشغيلها هنا** ولم تُثبّت.
 
 ## 1) المتطلبات
 - حساب GitHub: `reasonix2007-a11y` (لرفع الكود).
@@ -26,6 +32,7 @@ Railway. البناء يتم على سيرفرات Railway.
 | `REASONIX_TENANT_ID` | معرّف المؤسسة، مثل `your-org` | ✅ (الإنتاج) |
 | `REASONIX_ALLOWED_DOMAINS` | النطاقات المصرّح بفحصها، مثل `example.com,example.org` | ✅ (الإنتاج) |
 | `REASONIX_ZAP_API_KEY` | مفتاح عشوائي لتفعيل ZAP daemon | اختياري |
+| `REASONIX_START_MOBSF` | `true` لتشغيل خدمة MobSF داخل الحاوية (ثقيلة) | اختياري |
 | `REASONIX_TRUSTED_PROXY_IPS` | IP بروكسي Railway إن لزم تسجيل IP العميل | اختياري |
 | `PORT` | يضبطه Railway تلقائيًا — لا تضعه يدويًا | — |
 
@@ -35,11 +42,26 @@ Railway يحقن `PORT` تلقائيًا؛ السيرفر يستمع عليه و
 بيانات المستخدمين المشفّرة تُكتب في `/app/data`. أضف Volume على Railway بنقطة
 تثبيت `/app/data` حتى لا تُمسح البيانات عند إعادة النشر.
 
-## 6) ملاحظات حول الحجم
-الحاوية تثبّت كل الأدوات (nmap, nuclei, httpx, subfinder, katana, dnsx, naabu,
-gobuster, ffuf, amass, assetfinder, sqlmap, wapiti, theHarvester, sublist3r,
-wpscan, nikto, whatweb, sslscan, wafw00f, wfuzz, testssl.sh, OWASP ZAP).
-الحجم كبير (عدة GB). إذا تجاوز سقف خطة Railway وفشل البناء، نقلّل الأدوات.
+## 6) ملاحظات حول الحجم والبناء
+الحاوية تثبّت حزم كالي (`kali-tools-*`) + أدوات إضافية: metasploit، exploitdb
+(searchsploit)، nmap، nikto، sqlmap، wpscan، hydra، john، radare2، binwalk،
+tshark، nuclei، httpx، subfinder، katana، dnsx، naabu، gobuster، ffuf، amass،
+dalfox، trivy، grype، gitleaks، trufflehog، semgrep، checkov، OWASP ZAP وغيرها.
+
+الحجم كبير جدًا (عدة GB، ربما 6–10GB+). ملاحظات مهمة:
+- كل تثبيت أداة **متسامح مع الفشل** (`|| echo FAILED`): فشل حزمة واحدة يُسجَّل في
+  سجلّ البناء ولا يُجهض الصورة؛ الأداة المفقودة تبقى ظاهرة كـ"غير مثبتة" في الواجهة.
+- الأعطال الصلبة الوحيدة التي تُفشل البناء: طبقة apt الأساسية، تثبيت Node، `npm ci`،
+  أو **تجاوز مهلة/سقف خطة Railway**. راقب سجلّ البناء في لوحة Railway.
+- الأدوات التي تحتاج خدمات (ZAP، sqlmap API، MobSF) تبدأ من `docker-entrypoint.sh`
+  وتزيد استهلاك الذاكرة؛ ZAP يبدأ فقط عند ضبط `REASONIX_ZAP_API_KEY`، وMobSF فقط عند
+  `REASONIX_START_MOBSF=true`.
+
+## 6.1) ما لا يعمل على Railway (مقصود)
+- أدوات رسومية GUI: Burp، Vega، Maltego، Cutter، IDA.
+- أدوات ويندوز: x64dbg.
+- أدوات لاسلكي تحتاج محوّل شبكة فيزيائي: aircrack-ng، wifite، reaver، kismet، bettercap.
+- خدمات تجارية مرخّصة أو تحتاج مفاتيح حساب: Nessus، Qualys، Burp Pro، Shodan، Censys، Snyk.
 
 ## 7) ضوابط التفويض
 في الإنتاج، الفحوصات مرفوضة حتى يُضبط `REASONIX_TENANT_ID` و
